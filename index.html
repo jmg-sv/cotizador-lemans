@@ -1339,6 +1339,33 @@ function aplicarOpcionExtraida(d){
   o.querySelector('.f-bag').value = d.bag || '';
   o.querySelector('.f-net').value = d.netAdt || '';
   o.querySelector('.f-net-chd').value = d.netChd || '';
+
+  // Escalas detectadas por la IA (ida y regreso)
+  const parseStops = (v)=>{
+    if(Array.isArray(v)) return v;
+    if(typeof v === 'string' && v.trim()){
+      try{ const p = JSON.parse(v); return Array.isArray(p) ? p : []; }
+      catch(e){ return []; }
+    }
+    return [];
+  };
+  const fillStops = (listSel, stops)=>{
+    const list = o.querySelector(listSel);
+    if(!list) return;
+    list.innerHTML = '';
+    stops.forEach(s=>{
+      const wrap = document.createElement('div');
+      wrap.innerHTML = escRowHTML();
+      const row = wrap.firstElementChild;
+      row.querySelector('.esc-city').value = (s && s.city) || '';
+      const timeInput = row.querySelector('.esc-time');
+      if(timeInput) timeInput.value = (s && s.time) || '';
+      list.appendChild(row);
+    });
+  };
+  fillStops('.stops-out-list', parseStops(d.stopsOut));
+  fillStops('.stops-ret-list', parseStops(d.stopsRet));
+
   o.scrollIntoView({behavior:'smooth', block:'center'});
   render();
 }
