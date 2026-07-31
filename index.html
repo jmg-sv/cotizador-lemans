@@ -954,21 +954,10 @@ function toggleChildFields(){
 document.getElementById('chdCount').addEventListener('input',toggleChildFields);
 
 // ======================================================================
-// ===================  CAPA DE GESTIÓN (Bitrix24 vía Make.com)  =======
+// ===================  CAPA DE GESTIÓN (compartida)  ==================
 // ======================================================================
 
-const MAKE_WEBHOOK_URL = 'PEGA_AQUI_LA_URL_DEL_WEBHOOK_DE_MAKE'; // ej: https://hook.us1.make.com/xxxxxxxxxxxxx
-
-async function llamarBackend(action, payload){
-  const res = await fetch(MAKE_WEBHOOK_URL, {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({action, ...payload})
-  });
-  if(!res.ok) throw new Error('Backend respondió '+res.status);
-  return res.json();
-}
-
+// ---------- navegación entre vistas ----------
 function switchView(name){
   document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active', v.id==='view-'+name));
   document.querySelectorAll('.tn-btn').forEach(b=>b.classList.toggle('active', b.dataset.view===name));
@@ -976,9 +965,11 @@ function switchView(name){
   if(name==='reportes') cargarReportes();
 }
 
-let currentQuoteId = null;
+let currentQuoteId = null; // id de la cotización actualmente cargada (null = nueva, sin guardar)
 
-// ---------- serializar / cargar formulario (idéntico a la versión anterior) ----------
+function uid(){ return 'q_'+Date.now()+'_'+Math.random().toString(36).slice(2,8); }
+
+// ---------- serializar el formulario completo a un objeto plano ----------
 function serializeForm(){
   const readEsc=(root,sel)=>[...root.querySelectorAll(sel+' .esc-row')].map(r=>({
     city:r.querySelector('.esc-city').value, time:r.querySelector('.esc-time')?r.querySelector('.esc-time').value:''
@@ -1017,6 +1008,7 @@ function serializeForm(){
   };
 }
 
+// ---------- reconstruir el formulario desde un objeto guardado ----------
 function loadForm(data){
   document.getElementById('optList').innerHTML=''; optCount=0;
   document.getElementById('pkgList').innerHTML=''; pkgCount=0;
@@ -1049,9 +1041,10 @@ function loadForm(data){
     const outList=o.querySelector('.stops-out-list'), retList=o.querySelector('.stops-ret-list');
     (od.stopsOut||[]).forEach(s=>{ const d=document.createElement('div'); d.innerHTML=escRowHTML(); const el=d.firstElementChild; outList.appendChild(el); el.querySelector('.esc-city').value=s.city||''; el.querySelector('.esc-time').value=s.time||''; });
     (od.stopsRet||[]).forEach(s=>{ const d=document.createElement('div'); d.innerHTML=escRowHTML(); const el=d.firstElementChild; retList.appendChild(el); el.querySelector('.esc-city').value=s.city||''; el.querySelector('.esc-time').value=s.time||''; });
+    // disparar el cambio de tipo de viaje para mostrar/ocultar los bloques correctos
     o.querySelector('.f-trip').dispatchEvent(new Event('change'));
     if(od.trip==='md' && (od.tramos||[]).length){
-      o.querySelectorAll('[data-tramo]').forEach(t=>t.remove());
+      o.querySelector('[data-tramo]') && o.querySelectorAll('[data-tramo]').forEach(t=>t.remove());
       const addBtn=o.querySelector('.md-wrap .btn-add');
       od.tramos.forEach(td=>{
         addTramo(addBtn);
@@ -1074,6 +1067,7 @@ function loadForm(data){
   render();
 }
 
+// ---------- calcular el total estimado del viaje leyéndolo del preview ya renderizado ----------
 function extraerTotalDelPreview(){
   const el=document.querySelector('#page .gt-amount');
   if(!el) return 0;
@@ -1081,42 +1075,73 @@ function extraerTotalDelPreview(){
   return isNaN(n)?0:n;
 }
 
-// ---------- guardar (crear o actualizar) vía Make.com → Bitrix24 ----------
+// ======================================================================
+// ==========  CONEXIÓN CON GOOGLE SHEETS (a través de Make.com)  =======
+// ======================================================================
+// Pega aquí la URL del webhook "Custom webhook" de tu escenario de Make.com.
+// Un solo webhook recibe 3 acciones distintas según el campo "action":
+//   { action:'list' }                              -> devuelve todas las filas de la hoja
+//   { action:'save', id, cotNum, ... , formData }   -> agrega o actualiza una fila (por id)
+//   { action:'delete', id }                         -> elimina la fila con ese id
+const MAKE_WEBHOOK_URL = 'https://hook.us2.make.com/wlmilxx7qpnmg7chc0fjstm9vz1h5j2t';
+
+async function llamarMake(payload){
+  const res = await fetch(MAKE_WEBHOOK_URL, {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(payload)
+  });
+  if(!res.ok) throw new Error('Make.com respondió con estado '+res.status);
+  return await res.json();
+}
+
+// ---------- guardar (crear o actualizar) en Google Sheets ----------
 async function guardarCotizacion(){
   const status=document.getElementById('saveStatus');
-  status.textContent='Guardando…';
+  status.textContent='Guardando en Google Sheets…';
   try{
     render();
     const data=serializeForm();
     const total=extraerTotalDelPreview();
     const paxNames=(data.pax||'').split('\n').map(s=>s.trim()).filter(Boolean);
     const destinos=[...(data.options||[]).map(o=>o.dest), ...(data.packages||[]).map(p=>p.dest)].filter(Boolean);
-
+    // el id se genera aquí mismo, en el navegador — así Make/Sheets solo confirman el guardado
+    const id = currentQuoteId || uid();
+    const now = new Date().toISOString();
     const payload={
-      id: currentQuoteId || undefined,
+      action:'save', id,
       cotNum:data.cotNum, cotDate:data.cotDate, asesor:data.asesor,
       cliente:paxNames[0]||'Sin nombre', destino:destinos[0]||'—',
-      total, formData: JSON.stringify(data)
+      total, formData: JSON.stringify(data), updatedAt: now
     };
-    const resp = await llamarBackend('guardar', payload);
-    currentQuoteId = resp.id;
-    status.textContent='✓ Guardado como '+data.cotNum+' en Bitrix24 — visible para todos los asesores.';
+    await llamarMake(payload);
+    currentQuoteId = id;
+    status.textContent='✓ Guardado como '+payload.cotNum+' en Google Sheets — visible para todos los asesores.';
     setTimeout(()=>{ status.textContent=''; }, 4000);
   }catch(e){
-    status.textContent='⚠ No se pudo guardar en Bitrix24. Revisa tu conexión.';
+    status.textContent='⚠ No se pudo guardar en Google Sheets. Revisa la conexión / el webhook.';
     console.error(e);
   }
 }
 
-// ---------- HISTORIAL ----------
+// ---------- HISTORIAL (leído directo de Google Sheets vía Make.com) ----------
 let indiceCache=[];
-async function cargarIndice(){
+async function cargarIndice(forzar){
   const wrap=document.getElementById('histTableWrap');
-  wrap.innerHTML='<div class="empty-state">Cargando desde Bitrix24…</div>';
+  wrap.innerHTML='<div class="empty-state">Cargando cotizaciones desde Google Sheets…</div>';
   try{
-    indiceCache = await llamarBackend('listar', {});
-  }catch(e){ indiceCache=[]; wrap.innerHTML='<div class="empty-state">No se pudo conectar con Bitrix24.</div>'; console.error(e); return; }
-
+    const resp = await llamarMake({action:'list'});
+    indiceCache = (resp.items||[]).map(x=>({
+      id:String(x.id), cotNum:x.cotNum||'', cotDate:x.cotDate||'', asesor:x.asesor||'',
+      cliente:x.cliente||'', destino:x.destino||'', total:parseFloat(x.total)||0,
+      formData:x.formData, updatedAt:x.updatedAt||x.cotDate||''
+    }));
+  }catch(e){
+    indiceCache=[];
+    wrap.innerHTML='<div class="empty-state">⚠ No se pudo conectar con Google Sheets / Make.com. Revisa la URL del webhook.</div>';
+    console.error(e);
+    return;
+  }
   const asesorSel=document.getElementById('histAsesor');
   const asesores=[...new Set(indiceCache.map(x=>x.asesor).filter(Boolean))].sort();
   asesorSel.innerHTML='<option value="">Todos los asesores</option>'+asesores.map(a=>`<option>${a}</option>`).join('');
@@ -1139,9 +1164,9 @@ function renderHistorial(){
       if(!hay.includes(q)) return false;
     }
     return true;
-  });
+  }).sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||''));
 
-  if(!rows.length){ wrap.innerHTML='<div class="empty-state">No hay cotizaciones guardadas todavía.</div>'; return; }
+  if(!rows.length){ wrap.innerHTML='<div class="empty-state">No hay cotizaciones guardadas todavía. Genera una y presiona "Guardar cotización".</div>'; return; }
 
   wrap.innerHTML=`<table class="cot-table"><thead><tr>
     <th>N° cotización</th><th>Cliente</th><th>Destino</th><th>Asesor</th><th>Fecha</th><th>Total USD</th><th>Acciones</th>
@@ -1152,7 +1177,7 @@ function renderHistorial(){
       <td>${x.destino||'—'}</td>
       <td>${x.asesor||'—'}</td>
       <td>${x.cotDate||'—'}</td>
-      <td>${x.total?('USD '+Number(x.total).toLocaleString('en-US',{minimumFractionDigits:2})):'—'}</td>
+      <td>${x.total?('USD '+x.total.toLocaleString('en-US',{minimumFractionDigits:2})):'—'}</td>
       <td class="tbl-actions">
         <button class="tbl-btn ver" onclick="abrirCotizacion('${x.id}')">Ver / Editar</button>
         <button class="tbl-btn dup" onclick="duplicarCotizacion('${x.id}')">Duplicar</button>
@@ -1162,42 +1187,47 @@ function renderHistorial(){
   </tbody></table>`;
 }
 
-async function abrirCotizacion(id){
+function abrirCotizacion(id){
+  const record=indiceCache.find(x=>x.id===id);
+  if(!record){ alert('No se encontró esa cotización.'); return; }
   try{
-    const record = await llamarBackend('obtener', {id});
     currentQuoteId=id;
     loadForm(JSON.parse(record.formData));
     switchView('nueva');
-  }catch(e){ alert('No se pudo abrir la cotización desde Bitrix24.'); console.error(e); }
+  }catch(e){ alert('No se pudo leer el contenido de esa cotización.'); console.error(e); }
 }
 
-async function duplicarCotizacion(id){
+function duplicarCotizacion(id){
+  const record=indiceCache.find(x=>x.id===id);
+  if(!record){ alert('No se encontró esa cotización.'); return; }
   try{
-    const record = await llamarBackend('obtener', {id});
-    currentQuoteId=null; // se guardará como registro nuevo
+    currentQuoteId=null; // forzar que se cree una fila nueva al guardar (se generará un id nuevo)
     const data=JSON.parse(record.formData);
-    data.cotNum = (data.cotNum||'COT') + '-COPIA';
+    data.cotNum=(data.cotNum||'COT')+'-COPIA';
     loadForm(data);
     switchView('nueva');
-  }catch(e){ alert('No se pudo duplicar.'); console.error(e); }
+  }catch(e){ alert('No se pudo duplicar esa cotización.'); console.error(e); }
 }
 
 async function eliminarCotizacion(id){
-  if(!confirm('¿Eliminar esta cotización de Bitrix24? No se puede deshacer.')) return;
+  if(!confirm('¿Eliminar esta cotización de Google Sheets? Esta acción no se puede deshacer.')) return;
   try{
-    await llamarBackend('eliminar', {id});
+    await llamarMake({action:'delete', id});
     indiceCache = indiceCache.filter(x=>x.id!==id);
     renderHistorial();
-  }catch(e){ alert('No se pudo eliminar en Bitrix24.'); console.error(e); }
+  }catch(e){ alert('No se pudo eliminar en Google Sheets.'); console.error(e); }
 }
 
-// ---------- REPORTES ----------
+// ---------- REPORTES (mismos datos, calculados en el navegador) ----------
 async function cargarReportes(){
-  let arr=[];
-  try{ arr = await llamarBackend('listar', {}); }catch(e){ arr=[]; }
+  let arr=indiceCache;
+  try{
+    const resp = await llamarMake({action:'list'});
+    arr = (resp.items||[]).map(x=>({asesor:x.asesor||'', cotDate:x.cotDate||'', total:parseFloat(x.total)||0}));
+  }catch(e){ console.error(e); }
 
   const totalCot=arr.length;
-  const totalUSD=arr.reduce((s,x)=>s+(Number(x.total)||0),0);
+  const totalUSD=arr.reduce((s,x)=>s+(x.total||0),0);
   const promedio=totalCot? totalUSD/totalCot : 0;
   const asesoresActivos=new Set(arr.map(x=>x.asesor).filter(Boolean)).size;
 
@@ -1208,31 +1238,32 @@ async function cargarReportes(){
     <div class="kpi-card"><div class="kpi-label">Asesores activos</div><div class="kpi-value">${asesoresActivos}</div></div>`;
 
   const porAsesor={};
-  arr.forEach(x=>{ const k=x.asesor||'Sin asesor'; porAsesor[k]=porAsesor[k]||{count:0,total:0}; porAsesor[k].count++; porAsesor[k].total+=(Number(x.total)||0); });
+  arr.forEach(x=>{ const k=x.asesor||'Sin asesor'; porAsesor[k]=porAsesor[k]||{count:0,total:0}; porAsesor[k].count++; porAsesor[k].total+=(x.total||0); });
   const maxAsesorCount=Math.max(1,...Object.values(porAsesor).map(v=>v.count));
-  document.querySelector('#repAsesor .rep-body').innerHTML = Object.entries(porAsesor).sort((a,b)=>b[1].count-a[1].count).map(([nombre,v])=>`
+  const asesorRows=Object.entries(porAsesor).sort((a,b)=>b[1].count-a[1].count);
+  document.querySelector('#repAsesor .rep-body').innerHTML = asesorRows.length? asesorRows.map(([nombre,v])=>`
     <div class="rep-row">
       <div class="rep-name">${nombre}</div>
       <div class="rep-bar-wrap"><div class="rep-bar" style="width:${(v.count/maxAsesorCount*100).toFixed(0)}%"></div></div>
       <div class="rep-num">${v.count} cot. · USD ${v.total.toLocaleString('en-US',{maximumFractionDigits:0})}</div>
-    </div>`).join('') || '<div class="empty-state">Aún no hay datos.</div>';
+    </div>`).join('') : '<div class="empty-state">Aún no hay datos.</div>';
 
   const porMes={};
-  arr.forEach(x=>{ const k=(x.cotDate||'').slice(0,7)||'Sin fecha'; porMes[k]=porMes[k]||{count:0,total:0}; porMes[k].count++; porMes[k].total+=(Number(x.total)||0); });
+  arr.forEach(x=>{ const k=(x.cotDate||'').slice(0,7)||'Sin fecha'; porMes[k]=porMes[k]||{count:0,total:0}; porMes[k].count++; porMes[k].total+=(x.total||0); });
   const maxMesCount=Math.max(1,...Object.values(porMes).map(v=>v.count));
-  document.querySelector('#repMes .rep-body').innerHTML = Object.entries(porMes).sort((a,b)=>b[0].localeCompare(a[0])).map(([mes,v])=>`
+  const mesRows=Object.entries(porMes).sort((a,b)=>b[0].localeCompare(a[0]));
+  document.querySelector('#repMes .rep-body').innerHTML = mesRows.length? mesRows.map(([mes,v])=>`
     <div class="rep-row">
       <div class="rep-name">${mes}</div>
       <div class="rep-bar-wrap"><div class="rep-bar" style="width:${(v.count/maxMesCount*100).toFixed(0)}%"></div></div>
       <div class="rep-num">${v.count} cot. · USD ${v.total.toLocaleString('en-US',{maximumFractionDigits:0})}</div>
-    </div>`).join('') || '<div class="empty-state">Aún no hay datos.</div>';
+    </div>`).join('') : '<div class="empty-state">Aún no hay datos.</div>';
 }
 
 // init
 document.getElementById('cotDate').value=new Date().toISOString().slice(0,10);
 toggleChildFields();
 render();
-
 </script>
 </body>
 </html>
