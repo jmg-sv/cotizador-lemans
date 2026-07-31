@@ -1340,6 +1340,17 @@ function aplicarOpcionExtraida(d){
   o.querySelector('.f-net').value = d.netAdt || '';
   o.querySelector('.f-net-chd').value = d.netChd || '';
 
+  // "¿Llega al día siguiente?": si la hora de llegada (HH:MM) es menor que la
+  // hora de salida, el vuelo cruzó la medianoche, así que marcamos "Sí".
+  const cruzaMedianoche = (salida, llegada) => {
+    if(!salida || !llegada) return false;
+    return llegada < salida;
+  };
+  const depNd = o.querySelector('.f-dep-nd');
+  if(depNd) depNd.value = cruzaMedianoche(d.depT, d.depAT) ? '1' : '0';
+  const retNd = o.querySelector('.f-ret-nd');
+  if(retNd) retNd.value = cruzaMedianoche(d.retT, d.retAT) ? '1' : '0';
+
   // Escalas detectadas por la IA (ida y regreso)
   const parseStops = (v)=>{
     if(Array.isArray(v)) return v;
