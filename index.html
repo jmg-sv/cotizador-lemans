@@ -1286,54 +1286,24 @@ async function handleGdsImage(file){
     const base64 = await fileToBase64(file);
     const mediaType = file.type || 'image/png';
 
-    const prompt = `Esta imagen es una captura de pantalla de un sistema GDS de viajes (Sabre, Amadeus o Bookingpad) mostrando un vuelo o tarifa.
-Extrae la información y responde ÚNICAMENTE con un objeto JSON (sin markdown, sin explicación, sin comillas triples), con exactamente estas claves:
-{
-  "fare": "nombre de la tarifa (ej. Basic, Económica, Óptima)",
-  "orig": "ciudad de origen",
-  "origC": "país de origen",
-  "dest": "ciudad de destino",
-  "destC": "país de destino",
-  "trip": "ow si es solo ida, rt si es ida y vuelta",
-  "depD": "fecha de salida en formato YYYY-MM-DD",
-  "depT": "hora de salida en formato HH:MM (24h)",
-  "depAT": "hora de llegada de ida en formato HH:MM (24h)",
-  "retD": "fecha de regreso en formato YYYY-MM-DD (vacío si es solo ida)",
-  "retT": "hora de salida de regreso en formato HH:MM (vacío si es solo ida)",
-  "retAT": "hora de llegada de regreso en formato HH:MM (vacío si es solo ida)",
-  "airline": "aerolínea",
-  "cabin": "cabina (Económica, Premium Economy, Ejecutiva, Primera)",
-  "bag": "equipaje incluido, como texto breve (ej. '1 maleta facturada (23 kg)')",
-  "netAdt": "precio neto adulto, solo el número sin símbolo de moneda",
-  "netChd": "precio neto niño si aparece, solo el número, vacío si no aplica"
-}
-Si algún dato no aparece en la imagen, usa una cadena vacía "" en ese campo. No inventes datos que no estén visibles.`;
-
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
+    // La llamada a la IA pasa por el mismo webhook de Make.com que ya usamos
+    // para list/save/delete (ruta 'readGDS' del Router), en vez de llamar
+    // directo a api.anthropic.com desde el navegador. Así funciona igual
+    // dentro de Claude.ai como publicado en GitHub Pages, y no expone la
+    // API key en el código del cliente.
+    const response = await fetch(MAKE_WEBHOOK_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 1000,
-        messages: [{
-          role: "user",
-          content: [
-            { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } },
-            { type: "text", text: prompt }
-          ]
-        }]
+        action: "readGDS",
+        image: base64,
+        mediaType: mediaType
       })
     });
 
     if(!response.ok) throw new Error('Error de red al llamar a la IA: '+response.status);
-    const data = await response.json();
-    const textBlocks = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text);
-    let raw = textBlocks.join('\n').trim();
-    raw = raw.replace(/```json|```/g, '').trim();
-
-    let extracted;
-    try{ extracted = JSON.parse(raw); }
-    catch(e){ throw new Error('La IA no devolvió un JSON válido: '+raw.slice(0,200)); }
+    const extracted = await response.json();
+    if(extracted && extracted.error) throw new Error(extracted.error);
 
     aplicarOpcionExtraida(extracted);
     status.textContent = '✓ Datos leídos y agregados como nueva opción de vuelo. Verifica antes de generar.';
