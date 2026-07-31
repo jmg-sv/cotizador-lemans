@@ -1131,10 +1131,12 @@ async function cargarIndice(forzar){
   wrap.innerHTML='<div class="empty-state">Cargando cotizaciones desde Google Sheets…</div>';
   try{
     const resp = await llamarMake({action:'list'});
+    // El Array Aggregator de Make entrega los campos por posición de columna (0=Id, 1=cotNum, 2=cotDate,
+    // 3=asesor, 4=cliente, 5=destino, 6=total, 7=formData, 8=updatedAt) en vez de por nombre.
     indiceCache = (resp.items||[]).map(x=>({
-      id:String(x.id), cotNum:x.cotNum||'', cotDate:x.cotDate||'', asesor:x.asesor||'',
-      cliente:x.cliente||'', destino:x.destino||'', total:parseFloat(x.total)||0,
-      formData:x.formData, updatedAt:x.updatedAt||x.cotDate||''
+      id:String(x['0']||''), cotNum:x['1']||'', cotDate:x['2']||'', asesor:x['3']||'',
+      cliente:x['4']||'', destino:x['5']||'', total:parseFloat(x['6'])||0,
+      formData:x['7'], updatedAt:x['8']||x['2']||''
     }));
   }catch(e){
     indiceCache=[];
