@@ -310,9 +310,11 @@
       <div class="paquete-hint">Agrega una opción de vuelo por cada tarifa que quieras mostrar (ej. Basic y Óptima). Puedes dejar esta sección vacía si solo cotizas paquetes.</div>
       <div id="optList"></div>
       <button class="btn-add" onclick="addOption()">+ Agregar opción de vuelo</button>
+      <div class="field" style="margin-top:10px"><label>ID de Deal en Bitrix (opcional)</label><input id="gdsDealId" placeholder="Ej. 1234 — cópialo de la URL del Deal en Bitrix"></div>
       <button class="btn-add" style="background:#f0e9ff;border-color:#c9b6f5;color:#5b3aa6;margin-top:8px" onclick="document.getElementById('gdsImgInput').click()">🤖 Leer captura de GDS con IA</button>
       <input type="file" id="gdsImgInput" accept="image/*" style="display:none" onchange="handleGdsImage(this.files[0])">
       <div id="gdsImgStatus" style="font-size:12px;color:#5b3aa6;margin-top:6px;min-height:16px;"></div>
+      <div style="font-size:11px;color:#8a93a6;margin-top:2px">Si pones el ID del Deal, la IA agregará automáticamente un comentario con los datos del vuelo en ese Deal de Bitrix.</div>
 
       <div class="section-title">Asistencia de viajes (opcional)</div>
       <div class="field"><label>¿Incluir asistencia?</label>
@@ -1296,6 +1298,8 @@ async function handleGdsImage(file){
     const base64 = await fileToBase64(file);
     const mediaType = file.type || 'image/png';
 
+    const dealIdVal = (document.getElementById('gdsDealId')?.value || '').trim();
+
     // La llamada a la IA pasa por n8n (self-hosted en el VPS), ruta /leer-gds.
     // La clave de Anthropic vive como Credential dentro de n8n, nunca en el
     // navegador. list/save/delete de cotizaciones siguen usando Make.com sin
@@ -1307,7 +1311,7 @@ async function handleGdsImage(file){
         action: "readGDS",
         image: base64,
         mediaType: mediaType,
-        dealId: ""
+        dealId: dealIdVal
       })
     });
 
@@ -1316,7 +1320,8 @@ async function handleGdsImage(file){
     if(extracted && extracted.error) throw new Error(extracted.error);
 
     aplicarOpcionExtraida(extracted);
-    status.textContent = '✓ Datos leídos y agregados como nueva opción de vuelo. Verifica antes de generar.';
+    const bitrixMsg = dealIdVal ? ' Se agregó un comentario en el Deal #'+dealIdVal+' de Bitrix.' : '';
+    status.textContent = '✓ Datos leídos y agregados como nueva opción de vuelo. Verifica antes de generar.'+bitrixMsg;
     setTimeout(()=>{ status.textContent=''; }, 6000);
 
   }catch(e){
