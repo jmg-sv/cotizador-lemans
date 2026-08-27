@@ -1089,6 +1089,7 @@ function extraerTotalDelPreview(){
 //   { action:'save', id, cotNum, ... , formData }   -> agrega o actualiza una fila (por id)
 //   { action:'delete', id }                         -> elimina la fila con ese id
 const MAKE_WEBHOOK_URL = 'https://hook.us2.make.com/wlmilxx7qpnmg7chc0fjstm9vz1h5j2t';
+const N8N_GDS_WEBHOOK_URL = 'https://n8n.lemans.travel/webhook/leer-gds';
 
 async function llamarMake(payload){
   const res = await fetch(MAKE_WEBHOOK_URL, {
@@ -1288,18 +1289,18 @@ async function handleGdsImage(file){
     const base64 = await fileToBase64(file);
     const mediaType = file.type || 'image/png';
 
-    // La llamada a la IA pasa por el mismo webhook de Make.com que ya usamos
-    // para list/save/delete (ruta 'readGDS' del Router), en vez de llamar
-    // directo a api.anthropic.com desde el navegador. Así funciona igual
-    // dentro de Claude.ai como publicado en GitHub Pages, y no expone la
-    // API key en el código del cliente.
-    const response = await fetch(MAKE_WEBHOOK_URL, {
+    // La llamada a la IA pasa por n8n (self-hosted en el VPS), ruta /leer-gds.
+    // La clave de Anthropic vive como Credential dentro de n8n, nunca en el
+    // navegador. list/save/delete de cotizaciones siguen usando Make.com sin
+    // cambios (MAKE_WEBHOOK_URL más abajo).
+    const response = await fetch(N8N_GDS_WEBHOOK_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         action: "readGDS",
         image: base64,
-        mediaType: mediaType
+        mediaType: mediaType,
+        dealId: ""
       })
     });
 
