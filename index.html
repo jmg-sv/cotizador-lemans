@@ -505,6 +505,7 @@ function tramoRowHTML(){
       <div class="field"><label>Hora salida</label><input class="t-dt" type="time"></div>
       <div class="field"><label>Hora llegada</label><input class="t-at" type="time"></div>
     </div>
+    <div class="field"><label>¿Llega al día sig.?</label><select class="t-nd"><option value="0">No</option><option value="1">Sí (+1 día)</option></select></div>
     <div class="field"><label>Escalas (opcional)</label><input class="t-esc" placeholder="Ej. Lisboa, Bogotá"></div>
   </div>`;
 }
@@ -640,6 +641,7 @@ function render(){
       date:t.querySelector('.t-date').value,
       dt:t.querySelector('.t-dt').value,
       at:t.querySelector('.t-at').value,
+      nd:t.querySelector('.t-nd') ? t.querySelector('.t-nd').value : '0',
       esc:(t.querySelector('.t-esc').value||'').trim()
     })).filter(t=>t.orig||t.dest) : [];
     const airline=o.querySelector('.f-airline').value||'—';
@@ -714,7 +716,9 @@ function render(){
       retHTML = '';
       const mdRows = tramos.map((t,k)=>{
         const esc = t.esc ? ` &nbsp;·&nbsp; <span style="color:var(--naranja)">escala: ${t.esc}</span>` : '';
-        return `<div class="hr-row"><span class="hr-tag">Tramo ${k+1}</span><span class="hr-txt"><b>${t.orig||'—'}</b> ${fmtDate(t.date)}${t.dt?(' · '+t.dt):''} &nbsp;→&nbsp; <b>${t.dest||'—'}</b>${t.at?(' · '+t.at):''}${esc}</span></div>`;
+        const tArrD = t.nd==='1' ? addDay(t.date,1) : t.date;
+        const llegadaFecha = (t.nd==='1' && t.date) ? ` ${fmtDate(tArrD)}` : '';
+        return `<div class="hr-row"><span class="hr-tag">Tramo ${k+1}</span><span class="hr-txt"><b>${t.orig||'—'}</b> ${fmtDate(t.date)}${t.dt?(' · '+t.dt):''} &nbsp;→&nbsp; <b>${t.dest||'—'}</b>${llegadaFecha}${t.at?(' · '+t.at):''}${esc}</span></div>`;
       }).join('');
       horariosHTML = `<div class="horarios">${mdRows}</div>`;
     }
@@ -992,7 +996,9 @@ function serializeForm(){
     tramos:[...o.querySelectorAll('[data-tramo]')].map(t=>({
       orig:t.querySelector('.t-orig').value, dest:t.querySelector('.t-dest').value,
       destc:t.querySelector('.t-destc').value, date:t.querySelector('.t-date').value,
-      dt:t.querySelector('.t-dt').value, at:t.querySelector('.t-at').value, esc:t.querySelector('.t-esc').value
+      dt:t.querySelector('.t-dt').value, at:t.querySelector('.t-at').value,
+      nd:t.querySelector('.t-nd') ? t.querySelector('.t-nd').value : '0',
+      esc:t.querySelector('.t-esc').value
     })),
     airline:o.querySelector('.f-airline').value, cabin:o.querySelector('.f-cabin').value,
     bag:o.querySelector('.f-bag').value, netAdt:o.querySelector('.f-net').value, netChd:o.querySelector('.f-net-chd').value
@@ -1057,6 +1063,7 @@ function loadForm(data){
         t.querySelector('.t-orig').value=td.orig||''; t.querySelector('.t-dest').value=td.dest||'';
         t.querySelector('.t-destc').value=td.destc||''; t.querySelector('.t-date').value=td.date||'';
         t.querySelector('.t-dt').value=td.dt||''; t.querySelector('.t-at').value=td.at||''; t.querySelector('.t-esc').value=td.esc||'';
+        const tNd = t.querySelector('.t-nd'); if(tNd) tNd.value = td.nd || '0';
       });
     }
   });
@@ -1405,6 +1412,8 @@ function aplicarOpcionExtraida(d){
         row.querySelector('.t-date').value = (t && t.date) || '';
         row.querySelector('.t-dt').value = (t && t.dt) || '';
         row.querySelector('.t-at').value = (t && t.at) || '';
+        const tNd = row.querySelector('.t-nd');
+        if(tNd) tNd.value = cruzaMedianoche((t && t.dt) || '', (t && t.at) || '') ? '1' : '0';
         row.querySelector('.t-esc').value = (t && t.esc) || '';
         tramoList.appendChild(row);
       });
