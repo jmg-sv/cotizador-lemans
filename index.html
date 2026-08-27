@@ -1328,7 +1328,7 @@ function aplicarOpcionExtraida(d){
   o.querySelector('.f-orig-c').value = d.origC || '';
   o.querySelector('.f-dest').value = d.dest || '';
   o.querySelector('.f-dest-c').value = d.destC || '';
-  o.querySelector('.f-trip').value = (d.trip==='rt') ? 'rt' : 'ow';
+  o.querySelector('.f-trip').value = (d.trip==='rt' || d.trip==='md') ? d.trip : 'ow';
   o.querySelector('.f-trip').dispatchEvent(new Event('change'));
   o.querySelector('.f-dep-d').value = d.depD || '';
   o.querySelector('.f-dep-t').value = d.depT || '';
@@ -1378,6 +1378,39 @@ function aplicarOpcionExtraida(d){
   };
   fillStops('.stops-out-list', parseStops(d.stopsOut));
   fillStops('.stops-ret-list', parseStops(d.stopsRet));
+
+  // Multidestino: si la IA detectó un itinerario de varios tramos que no
+  // encaja como ida-y-vuelta simple (ej. un tramo doméstico independiente),
+  // llenamos la lista de tramos en vez de los campos de ida/regreso.
+  const parseTramos = (v)=>{
+    if(Array.isArray(v)) return v;
+    if(typeof v === 'string' && v.trim()){
+      try{ const p = JSON.parse(v); return Array.isArray(p) ? p : []; }
+      catch(e){ return []; }
+    }
+    return [];
+  };
+  const tramosIA = parseTramos(d.tramos);
+  if(d.trip === 'md' && tramosIA.length){
+    const tramoList = o.querySelector('.tramo-list');
+    if(tramoList){
+      tramoList.innerHTML = '';
+      tramosIA.forEach(t=>{
+        const wrap = document.createElement('div');
+        wrap.innerHTML = tramoRowHTML();
+        const row = wrap.firstElementChild;
+        row.querySelector('.t-orig').value = (t && t.orig) || '';
+        row.querySelector('.t-dest').value = (t && t.dest) || '';
+        row.querySelector('.t-destc').value = (t && t.destC) || '';
+        row.querySelector('.t-date').value = (t && t.date) || '';
+        row.querySelector('.t-dt').value = (t && t.dt) || '';
+        row.querySelector('.t-at').value = (t && t.at) || '';
+        row.querySelector('.t-esc').value = (t && t.esc) || '';
+        tramoList.appendChild(row);
+      });
+      renumTramos(tramoList);
+    }
+  }
 
   o.scrollIntoView({behavior:'smooth', block:'center'});
   render();
