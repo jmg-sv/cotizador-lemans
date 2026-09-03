@@ -1148,14 +1148,16 @@ async function cargarIndice(forzar){
     const resp = await llamarMake({action:'list'});
     // El Array Aggregator de Make entrega los campos por posición de columna (0=Id, 1=cotNum, 2=cotDate,
     // 3=asesor, 4=cliente, 5=destino, 6=total, 7=formData, 8=updatedAt) en vez de por nombre.
+    // n8n entrega los campos por nombre; se mantiene compatibilidad con el formato posicional de Make.
     indiceCache = (resp.items||[]).map(x=>({
-      id:String(x['0']||''), cotNum:x['1']||'', cotDate:x['2']||'', asesor:x['3']||'',
-      cliente:x['4']||'', destino:x['5']||'', total:parseFloat(x['6'])||0,
-      formData:x['7'], updatedAt:x['8']||x['2']||''
+      id:String(x.id||x.Id||x['0']||''), cotNum:x.cotNum||x['1']||'', cotDate:x.cotDate||x['2']||'',
+      asesor:x.asesor||x['3']||'', cliente:x.cliente||x['4']||'', destino:x.destino||x['5']||'',
+      total:parseFloat(x.total||x['6'])||0, formData:x.formData||x['7'],
+      updatedAt:x.updatedAt||x['8']||x.cotDate||x['2']||''
     }));
   }catch(e){
     indiceCache=[];
-    wrap.innerHTML='<div class="empty-state">⚠ No se pudo conectar con Google Sheets / Make.com. Revisa la URL del webhook.</div>';
+    wrap.innerHTML='<div class="empty-state">⚠ No se pudo conectar con Google Sheets / n8n. Revisa la URL del webhook.</div>';
     console.error(e);
     return;
   }
