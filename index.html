@@ -449,7 +449,7 @@ function optTemplate(n){
     </div>
     <div class="row">
       <div class="field"><label>Llegada ida — hora</label><input class="f-dep-at" type="time"></div>
-      <div class="field"><label>¿Llega al día sig.?</label><select class="f-dep-nd"><option value="0">No</option><option value="1">Sí (+1 día)</option></select></div>
+      <div class="field"><label>¿Llega al día sig.?</label><select class="f-dep-nd"><option value="0">No</option><option value="1">Sí (+1 día)</option><option value="2">Sí (+2 días)</option><option value="3">Sí (+3 días)</option></select></div>
     </div>
     <div class="row f-ret-wrap">
       <div class="field"><label>Regreso — fecha</label><input class="f-ret-d" type="date"></div>
@@ -457,7 +457,7 @@ function optTemplate(n){
     </div>
     <div class="row f-ret-wrap2">
       <div class="field"><label>Llegada regreso — hora</label><input class="f-ret-at" type="time"></div>
-      <div class="field"><label>¿Llega al día sig.?</label><select class="f-ret-nd"><option value="0">No</option><option value="1">Sí (+1 día)</option></select></div>
+      <div class="field"><label>¿Llega al día sig.?</label><select class="f-ret-nd"><option value="0">No</option><option value="1">Sí (+1 día)</option><option value="2">Sí (+2 días)</option><option value="3">Sí (+3 días)</option></select></div>
     </div>
     </div>
 
@@ -507,7 +507,7 @@ function tramoRowHTML(){
       <div class="field"><label>Hora salida</label><input class="t-dt" type="time"></div>
       <div class="field"><label>Hora llegada</label><input class="t-at" type="time"></div>
     </div>
-    <div class="field"><label>¿Llega al día sig.?</label><select class="t-nd"><option value="0">No</option><option value="1">Sí (+1 día)</option></select></div>
+    <div class="field"><label>¿Llega al día sig.?</label><select class="t-nd"><option value="0">No</option><option value="1">Sí (+1 día)</option><option value="2">Sí (+2 días)</option><option value="3">Sí (+3 días)</option></select></div>
     <div class="field"><label>Escalas (opcional)</label><input class="t-esc" placeholder="Ej. Lisboa, Bogotá"></div>
   </div>`;
 }
@@ -632,9 +632,9 @@ function render(){
     const stopsOutObj=readStops('.stops-out-list'), stopsRetObj=readStops('.stops-ret-list');
     const stopsOut=stopsOutObj.map(s=>s.city), stopsRet=stopsRetObj.map(s=>s.city);
     const depD=o.querySelector('.f-dep-d').value, depT=o.querySelector('.f-dep-t').value;
-    const depAT=o.querySelector('.f-dep-at').value, depND=o.querySelector('.f-dep-nd').value==='1';
+    const depAT=o.querySelector('.f-dep-at').value, depND=parseInt(o.querySelector('.f-dep-nd').value)||0;
     const retD=o.querySelector('.f-ret-d').value, retT=o.querySelector('.f-ret-t').value;
-    const retAT=o.querySelector('.f-ret-at').value, retND=o.querySelector('.f-ret-nd').value==='1';
+    const retAT=o.querySelector('.f-ret-at').value, retND=parseInt(o.querySelector('.f-ret-nd').value)||0;
     // Multidestino: leer tramos
     const tramos = trip==='md' ? [...o.querySelectorAll('[data-tramo]')].map(t=>({
       orig:(t.querySelector('.t-orig').value||'').trim(),
@@ -701,8 +701,8 @@ function render(){
     }
 
     // Horarios detallados de cada tramo
-    const depArrD = depND ? addDay(depD,1) : depD;
-    const retArrD = retND ? addDay(retD,1) : retD;
+    const depArrD = depND ? addDay(depD,depND) : depD;
+    const retArrD = retND ? addDay(retD,retND) : retD;
     const horaIda = `<div class="hr-row"><span class="hr-tag">Ida</span><span class="hr-txt"><b>${orig}</b> ${fmtDate(depD)}${depT?(' · '+depT):''} &nbsp;→&nbsp; <b>${dest}</b> ${fmtDate(depArrD)}${depAT?(' · '+depAT):''}</span></div>`;
     const horaReg = (trip==='rt')
       ? `<div class="hr-row vuelta"><span class="hr-tag">Regreso</span><span class="hr-txt"><b>${dest}</b> ${fmtDate(retD)}${retT?(' · '+retT):''} &nbsp;→&nbsp; <b>${orig}</b> ${fmtDate(retArrD)}${retAT?(' · '+retAT):''}</span></div>`
@@ -718,8 +718,9 @@ function render(){
       retHTML = '';
       const mdRows = tramos.map((t,k)=>{
         const esc = t.esc ? ` &nbsp;·&nbsp; <span style="color:var(--naranja)">escala: ${t.esc}</span>` : '';
-        const tArrD = t.nd==='1' ? addDay(t.date,1) : t.date;
-        const llegadaFecha = (t.nd==='1' && t.date) ? ` ${fmtDate(tArrD)}` : '';
+        const tNdN = parseInt(t.nd)||0;
+        const tArrD = tNdN ? addDay(t.date,tNdN) : t.date;
+        const llegadaFecha = (tNdN && t.date) ? ` ${fmtDate(tArrD)}` : '';
         return `<div class="hr-row"><span class="hr-tag">Tramo ${k+1}</span><span class="hr-txt"><b>${t.orig||'—'}</b> ${fmtDate(t.date)}${t.dt?(' · '+t.dt):''} &nbsp;→&nbsp; <b>${t.dest||'—'}</b>${llegadaFecha}${t.at?(' · '+t.at):''}${esc}</span></div>`;
       }).join('');
       horariosHTML = `<div class="horarios">${mdRows}</div>`;
@@ -1362,10 +1363,20 @@ function aplicarOpcionExtraida(d){
     if(!salida || !llegada) return false;
     return llegada < salida;
   };
+  // Días de diferencia entre salida y llegada. Si la IA devuelve la fecha de
+  // llegada (depArrD / retArrD / adate) se usa esa; si no, se deduce por la hora.
+  const diasLlegada = (fSal, fLleg, hSal, hLleg) => {
+    if(fSal && fLleg){
+      const a = new Date(fSal+'T00:00:00'), b = new Date(fLleg+'T00:00:00');
+      const diff = Math.round((b - a) / 86400000);
+      if(!isNaN(diff) && diff >= 0) return String(Math.min(diff, 3));
+    }
+    return cruzaMedianoche(hSal, hLleg) ? '1' : '0';
+  };
   const depNd = o.querySelector('.f-dep-nd');
-  if(depNd) depNd.value = cruzaMedianoche(d.depT, d.depAT) ? '1' : '0';
+  if(depNd) depNd.value = diasLlegada(d.depD, d.depArrD, d.depT, d.depAT);
   const retNd = o.querySelector('.f-ret-nd');
-  if(retNd) retNd.value = cruzaMedianoche(d.retT, d.retAT) ? '1' : '0';
+  if(retNd) retNd.value = diasLlegada(d.retD, d.retArrD, d.retT, d.retAT);
 
   // Escalas detectadas por la IA (ida y regreso)
   const parseStops = (v)=>{
@@ -1420,7 +1431,7 @@ function aplicarOpcionExtraida(d){
         row.querySelector('.t-dt').value = (t && t.dt) || '';
         row.querySelector('.t-at').value = (t && t.at) || '';
         const tNd = row.querySelector('.t-nd');
-        if(tNd) tNd.value = cruzaMedianoche((t && t.dt) || '', (t && t.at) || '') ? '1' : '0';
+        if(tNd) tNd.value = diasLlegada((t && t.date) || '', (t && t.adate) || '', (t && t.dt) || '', (t && t.at) || '');
         row.querySelector('.t-esc').value = (t && t.esc) || '';
         tramoList.appendChild(row);
       });
